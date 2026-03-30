@@ -11,6 +11,7 @@ const TEST_CHANNEL_ID = '1476939503510884638';
 const client = new Client({
   checkUpdate: false,
   syncStatus: true,
+  patchVoice: true, // クラウド環境での安定性向上
   ws: {
     properties: {
       $os: 'Windows',
@@ -24,7 +25,7 @@ const APP_NAMES = [
   '邂逅と邂逅のあいだ',
   '遂巡の残像',
   '存在の余白に棲む',
-  '帰還できない夜明け前',
+  '帰還できない nightfall',
   '誰かの概念になりたかった',
   '輪郭だけが残っている',
   '静止した時間の縫い目',
@@ -55,8 +56,19 @@ function randomFrom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+// 投稿間隔を完全にランダム化（連投・通常・長時間休憩の3パターン）
 function randomInterval() {
-  return (30 + Math.random() * 30) * 60 * 1000;
+  const rand = Math.random();
+  if (rand < 0.15) {
+    // 15%の確率で「連投モード」（3〜10分）
+    return (3 + Math.random() * 7) * 60 * 1000;
+  } else if (rand < 0.85) {
+    // 70%の確率で「通常モード」（40〜150分）
+    return (40 + Math.random() * 110) * 60 * 1000;
+  } else {
+    // 15%の確率で「長時間休憩モード」（4〜8時間）
+    return (240 + Math.random() * 240) * 60 * 1000;
+  }
 }
 
 async function generateWithRetry(retries = 3) {
@@ -78,7 +90,6 @@ async function generateWithRetry(retries = 3) {
         console.log(`[RETRY] ${i + 1}回目 ${wait / 1000}秒後に再試行...`);
         await new Promise(r => setTimeout(r, wait));
       } else {
-        console.error(`[GROQ FATAL] リトライ上限に達しました`);
         throw err;
       }
     }
@@ -130,16 +141,32 @@ async function updatePresence() {
 }
 
 async function postMessage() {
+  // 環境変数 ENABLE_POSTING でオンオフ設定
+  if (process.env.ENABLE_POSTING !== 'true') {
+    console.log('[SKIP] メッセージ送信は現在無効です (ENABLE_POSTING != true)');
+    setTimeout(postMessage, 60 * 60 * 1000); // 1時間後に再チェック
+    return;
+  }
+
   try {
     const channelId = randomFrom(CHANNEL_IDS);
     const channel = await client.channels.fetch(channelId);
+    
+    // タイピング状態の演出
+    await channel.sendTyping();
+    const typingTime = (Math.random() * 7000) + 5000;
+    
     const message = await generateWithRetry();
+    await new Promise(r => setTimeout(r, typingTime));
+    
     await channel.send(message);
     console.log(`[書き込み完了] ch:${channelId} 「${message}」`);
   } catch (err) {
     console.error('[POST ERROR]', err);
   } finally {
-    setTimeout(postMessage, randomInterval());
+    const nextWait = randomInterval();
+    console.log(`[次回の投稿まで] ${(nextWait / 60 / 1000).toFixed(1)}分待機します`);
+    setTimeout(postMessage, nextWait);
   }
 }
 
@@ -151,17 +178,7 @@ http.createServer((req, res) => res.end('Active')).listen(PORT);
 client.once('ready', async () => {
   console.log(`[READY] ${client.user.tag}`);
   updatePresence();
-
-  try {
-    const channel = await client.channels.fetch(TEST_CHANNEL_ID);
-    const message = await generateWithRetry();
-    await channel.send(message);
-    console.log(`[テスト送信完了] 「${message}」`);
-  } catch (err) {
-    console.error('[テスト送信エラー]', err);
-  }
-
-  setTimeout(postMessage, randomInterval());
+  setTimeout(postMessage, 10000); // 起動10秒後に最初の投稿チェック
 });
 
 client.login(process.env.DISCORD_TOKEN).catch(console.error);
