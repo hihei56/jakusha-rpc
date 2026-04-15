@@ -11,7 +11,7 @@ const TEST_CHANNEL_ID = '1476939503510884638';
 const client = new Client({
   checkUpdate: false,
   syncStatus: true,
-  patchVoice: true, // クラウド環境での安定性向上
+  patchVoice: true,
   ws: {
     properties: {
       $os: 'Windows',
@@ -22,16 +22,16 @@ const client = new Client({
 });
 
 const APP_NAMES = [
-  '邂逅と邂逅のあいだ',
-  '遂巡の残像',
-  '存在の余白に棲む',
-  '帰還できない nightfall',
-  '誰かの概念になりたかった',
-  '輪郭だけが残っている',
-  '静止した時間の縫い目',
-  '午前三時の主体性',
-  '忘れられた座標にいる',
-  '漂流する固有名詞',
+  '気軽に話せるサーバーを探しています',
+  '一人で悩んでいませんか？',
+  '雑談サーバーで話しませんか',
+  '居場所を探しています',
+  'のんびり話せる場所があります',
+  '誰でも歓迎のサーバーです',
+  'ゆるく話せるコミュニティ',
+  '気軽に参加できるサーバー',
+  '仲間を探しています',
+  '一緒に話せる人を募集中',
 ];
 
 const IMAGES = [
@@ -41,12 +41,12 @@ const IMAGES = [
 ];
 
 const STATUSES = [
-  { details: '弱者男性、募集中。', state: '∈存在の再分配区域' },
-  { details: '弱者男性のための余白、あります', state: '∈主体なき者たちの集会所' },
-  { details: '孤独の総量が多い人、来てください', state: '∈Ressentimentt / ∈State space' },
-  { details: '弱者男性サーバー、絶賛漂流中', state: '∈帰る場所を失った者の座標' },
-  { details: '君の弱さに名前をつけたい', state: '∈輪郭のない共同体' },
-  { details: '弱者男性という概念に参加する', state: '∈遂巡と邂逅のあいだ' },
+  { details: '気軽に話せる場所、あります', state: '↓ Discordサーバーに参加する' },
+  { details: '一人で悩まないで、一緒に話そう', state: '↓ 参加はこちら' },
+  { details: '居場所がない人、大歓迎です', state: '↓ サーバーに参加する' },
+  { details: 'ゆるく雑談できるメンバー募集中', state: '↓ 気軽に参加してください' },
+  { details: 'どんな悩みも話せるサーバーです', state: '↓ まずは覗いてみてください' },
+  { details: '認証なし・ルール少なめの雑談サーバー', state: '↓ 参加してみませんか' },
 ];
 
 const CHANNEL_IDS = process.env.CHANNEL_IDS.split(',').map(id => id.trim());
