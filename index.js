@@ -21,30 +21,8 @@ const client = new Client({
   }
 });
 
-const APP_NAMES = [
-  '気軽に話せるサーバーを探しています',
-  '一人で悩んでいませんか？',
-  '雑談サーバーで話しませんか',
-  '居場所を探しています',
-  'のんびり話せる場所があります',
-  '誰でも歓迎のサーバーです',
-  'ゆるく話せるコミュニティ',
-  '気軽に参加できるサーバー',
-  '仲間を探しています',
-  '一緒に話せる人を募集中',
-];
-
 const IMAGES = [
   '1501114018075770901'
-];
-
-const STATUSES = [
-  { details: '気軽に話せる場所、あります', state: '↓ Discordサーバーに参加する' },
-  { details: '一人で悩まないで、一緒に話そう', state: '↓ 参加はこちら' },
-  { details: '居場所がない人、大歓迎です', state: '↓ サーバーに参加する' },
-  { details: 'ゆるく雑談できるメンバー募集中', state: '↓ 気軽に参加してください' },
-  { details: 'どんな悩みも話せるサーバーです', state: '↓ まずは覗いてみてください' },
-  { details: '認証なし・ルール少なめの雑談サーバー', state: '↓ 参加してみませんか' },
 ];
 
 const CHANNEL_IDS = process.env.CHANNEL_IDS.split(',').map(id => id.trim());
@@ -96,13 +74,6 @@ async function generateWithRetry(retries = 3) {
 
 async function updatePresence() {
   try {
-    const appName = randomFrom(APP_NAMES);
-    const image = randomFrom(IMAGES);
-    const status = randomFrom(STATUSES);
-    const now = Date.now();
-    const totalAnimeTime = 24 * 60 * 1000;
-    const randomElapsed = Math.floor(Math.random() * 18 * 60 * 1000);
-
     client.ws.broadcast({
       op: 3,
       d: {
@@ -110,21 +81,21 @@ async function updatePresence() {
         afk: false,
         status: 'online',
         activities: [{
-          name: appName,
-          type: 3,
+          name: '眠たい',
+          type: 0,
           application_id: APP_ID,
-          details: status.details,
-          state: status.state,
           assets: {
-            large_image: image,
-            small_image: '1457346948989321384',
-            large_text: '烈核解放中'
+            large_image: randomFrom(IMAGES),
+            large_text: '眠たい'
           },
           timestamps: {
-            start: now - randomElapsed,
-            end: now - randomElapsed + totalAnimeTime
+            start: 1
           },
-          buttons: ['Discordサーバーに参加'],
+          party: {
+            id: 'nemutai',
+            size: [384838486, 384838488]
+          },
+          buttons: ['斎藤さん'],
           metadata: {
             button_urls: ['https://discord.gg/VwSpNkncWd']
           }
@@ -132,7 +103,7 @@ async function updatePresence() {
       }
     });
 
-    console.log(`[RPC更新] ${appName} / ${status.details}`);
+    console.log('[RPC更新] 眠たい');
   } catch (err) {
     console.error('[RPC ERROR]', err);
   }
