@@ -26,6 +26,17 @@ const IMAGES = [
 ];
 
 const CHANNEL_IDS = process.env.CHANNEL_IDS.split(',').map(id => id.trim());
+const PRIORITY_CHANNEL_IDS = process.env.PRIORITY_CHANNEL_IDS
+  ? process.env.PRIORITY_CHANNEL_IDS.split(',').map(id => id.trim())
+  : [];
+
+function buildWeightedPool() {
+  const pool = [...CHANNEL_IDS];
+  PRIORITY_CHANNEL_IDS.forEach(id => {
+    pool.push(id, id);
+  });
+  return pool;
+}
 const PROMPT = process.env.POST_PROMPT;
 
 function randomFrom(arr) {
@@ -107,7 +118,8 @@ async function postMessage() {
   }
 
   try {
-    const channelId = randomFrom(CHANNEL_IDS);
+    const pool = buildWeightedPool();
+    const channelId = pool[Math.floor(Math.random() * pool.length)];
     const channel = await client.channels.fetch(channelId);
     await channel.sendTyping();
     const typingTime = (Math.random() * 7000) + 5000;
