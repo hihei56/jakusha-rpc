@@ -95,7 +95,7 @@ async function updatePresence() {
             id: 'nemutai',
             size: [384838486, 384838488]
           },
-          buttons: ['斎藤さん'],
+          buttons: ['サーバーに参加'],
           metadata: {
             button_urls: ['https://discord.gg/VwSpNkncWd']
           }
