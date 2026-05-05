@@ -1,150 +1,445 @@
-process.env.DISCORDJS_WVOICE = 'false';
-const http = require('http');
-const { Client } = require('discord.js-selfbot-v13');
-const Groq = require('groq-sdk');
-require('dotenv').config();
+// Neverland Authentication Bot
+// Private thread version + Logging + Reauth command
 
-const APP_ID = '1375082813384032286';
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const TEST_CHANNEL_ID = '1476939503510884638';
+const {
+    Client,
+    GatewayIntentBits,
+    ChannelType,
+    PermissionFlagsBits,
+    EmbedBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    AttachmentBuilder,
+} = require('discord.js');
+const { createCanvas, loadImage } = require('canvas');
+const fs = require('fs');
 
 const client = new Client({
-  checkUpdate: false,
-  syncStatus: true,
-  patchVoice: true,
-  ws: {
-    properties: {
-      $os: 'Windows',
-      $browser: 'Discord Client',
-      $device: 'Discord Client'
-    }
-  }
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.DirectMessages,
+    ],
 });
 
-const IMAGES = [
-  '1501114018075770901'
+const CONFIG = {
+    VERIFY_ROLE_ID: process.env.VERIFY_ROLE_ID || 'YOUR_ROLE_ID',
+    AUTH_CHANNEL_ID: process.env.AUTH_CHANNEL_ID || 'YOUR_CHANNEL_ID',
+    WELCOME_CHANNEL_ID: process.env.WELCOME_CHANNEL_ID || 'YOUR_WELCOME_CHANNEL_ID',
+    LOG_CHANNEL_ID: process.env.LOG_CHANNEL_ID || 'YOUR_LOG_CHANNEL_ID',
+    LIMIT_SECONDS: 30,
+    NUMBER_COUNT: 5,
+    WHITELIST_FILE: './whitelist.json',
+    ASSETS: {
+        BACKGROUND: './assets/neverland_bg.png',
+        FRAME: './assets/frame.png',
+        LOGO: './assets/logo.png',
+    },
+};
+
+const AGES = [
+    'आठ',     // 8
+    'नौ',      // 9
+    'दस',     // 10
+    'ग्यारह', // 11
+    'बारह',   // 12
 ];
 
-const CHANNEL_IDS = process.env.CHANNEL_IDS.split(',').map(id => id.trim());
-const PRIORITY_CHANNEL_IDS = process.env.PRIORITY_CHANNEL_IDS
-  ? process.env.PRIORITY_CHANNEL_IDS.split(',').map(id => id.trim())
-  : [];
+const EMOJIS = ['🪄', '✨', '🌙', '⭐', '💫', '🌟', '🔮'];
 
-function buildWeightedPool() {
-  const pool = [...CHANNEL_IDS];
-  PRIORITY_CHANNEL_IDS.forEach(id => {
-    pool.push(id, id);
-  });
-  return pool;
-}
-const PROMPT = process.env.POST_PROMPT;
-
-function randomFrom(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
+function buildPhrase() {
+    const age = AGES[Math.floor(Math.random() * AGES.length)];
+    const emoji = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
+    return `मैं ${age} साल का हूँ ${emoji}`;
 }
 
-// 投稿間隔を完全にランダム化（連投・通常・長時間休憩の3パターン）
-function randomInterval() {
-  return (10 + Math.random() * 10) * 60 * 1000;
-}
-
-async function generateWithRetry(retries = 3) {
-  for (let i = 0; i < retries; i++) {
+function loadWhitelist() {
     try {
-      console.log(`[GROQ] 生成開始 (試行${i + 1}/${retries})`);
-      const completion = await groq.chat.completions.create({
-        model: 'llama-3.1-8b-instant',
-        messages: [{ role: 'user', content: PROMPT }],
-        max_tokens: 100,
-      });
-      const text = completion.choices[0].message.content.trim();
-      console.log(`[GROQ] 生成成功: 「${text}」`);
-      return text;
-    } catch (err) {
-      console.error(`[GROQ ERROR] status:${err.status} message:${err.message}`);
-      if (err.status === 429 && i < retries - 1) {
-        const wait = 20000 * (i + 1);
-        console.log(`[RETRY] ${i + 1}回目 ${wait / 1000}秒後に再試行...`);
-        await new Promise(r => setTimeout(r, wait));
-      } else {
-        throw err;
-      }
+        if (!fs.existsSync(CONFIG.WHITELIST_FILE)) {
+            fs.writeFileSync(CONFIG.WHITELIST_FILE, '[]');
+        }
+        return JSON.parse(fs.readFileSync(CONFIG.WHITELIST_FILE, 'utf8'));
+    } catch {
+        return [];
     }
-  }
 }
 
-async function updatePresence() {
-  try {
-    client.ws.broadcast({
-      op: 3,
-      d: {
-        since: null,
-        afk: false,
-        status: 'online',
-        activities: [{
-          name: '眠たい',
-          type: 0,
-          application_id: APP_ID,
-          assets: {
-            large_image: randomFrom(IMAGES),
-            large_text: '眠たい'
-          },
-          timestamps: {
-            start: 1
-          },
-          party: {
-            id: 'nemutai',
-            size: [384838486, 384838488]
-          },
-          buttons: ['サーバーに参加'],
-          metadata: {
-            button_urls: ['https://discord.gg/VwSpNkncWd']
-          }
-        }]
-      }
+function saveWhitelist(list) {
+    fs.writeFileSync(CONFIG.WHITELIST_FILE, JSON.stringify(list, null, 2));
+}
+
+let whitelist = loadWhitelist();
+const sessions = new Map();
+
+async function sendLog(guild, embed) {
+    const logChannel = guild.channels.cache.get(CONFIG.LOG_CHANNEL_ID);
+    if (!logChannel) return;
+    await logChannel.send({ embeds: [embed] }).catch(() => {});
+}
+
+async function logSuccess(member) {
+    await sendLog(member.guild, new EmbedBuilder()
+        .setColor(0x57F287)
+        .setTitle('✅ にゅうこくせいこう')
+        .addFields(
+            { name: 'ユーザー', value: `${member} (${member.user.tag})`, inline: true },
+            { name: 'ID', value: member.id, inline: true },
+        )
+        .setThumbnail(member.user.displayAvatarURL())
+        .setTimestamp()
+    );
+}
+
+async function logFail(member, reason) {
+    const reasonText = reason === 'timeout' ? 'じかんぎれ' : reason === 'wrong' ? 'おまじないまちがい' : reason;
+    await sendLog(member.guild, new EmbedBuilder()
+        .setColor(0xED4245)
+        .setTitle('❌ にゅうこくしっぱい')
+        .addFields(
+            { name: 'ユーザー', value: `${member} (${member.user.tag})`, inline: true },
+            { name: 'ID', value: member.id, inline: true },
+            { name: 'りゆう', value: reasonText, inline: true },
+        )
+        .setThumbnail(member.user.displayAvatarURL())
+        .setTimestamp()
+    );
+}
+
+async function generateWelcomeImage(member) {
+    const width = 1200;
+    const height = 500;
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+
+    try {
+        if (fs.existsSync(CONFIG.ASSETS.BACKGROUND)) {
+            const bg = await loadImage(CONFIG.ASSETS.BACKGROUND);
+            ctx.drawImage(bg, 0, 0, width, height);
+        } else {
+            const grad = ctx.createLinearGradient(0, 0, width, height);
+            grad.addColorStop(0, '#081120');
+            grad.addColorStop(1, '#13294b');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, width, height);
+        }
+
+        const avatar = await loadImage(
+            member.user.displayAvatarURL({ extension: 'png', size: 256 })
+        );
+
+        const x = 160;
+        const y = height / 2;
+        const r = 110;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(avatar, x - r, y - r, r * 2, r * 2);
+        ctx.restore();
+
+        ctx.strokeStyle = '#d4af37';
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.arc(x, y, r + 4, 0, Math.PI * 2);
+        ctx.stroke();
+
+        if (fs.existsSync(CONFIG.ASSETS.FRAME)) {
+            const frame = await loadImage(CONFIG.ASSETS.FRAME);
+            ctx.drawImage(frame, 0, 0, width, height);
+        }
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 54px serif';
+        ctx.fillText('ネバーランドへ、ようこそ！', 340, 170);
+
+        ctx.fillStyle = '#e0e7ff';
+        ctx.font = '36px sans-serif';
+        ctx.fillText(member.user.displayName || member.user.username, 340, 255);
+
+        ctx.fillStyle = '#d4af37';
+        ctx.font = '28px sans-serif';
+        ctx.fillText('きみをずっとまっていたよ ✨', 340, 320);
+
+        if (fs.existsSync(CONFIG.ASSETS.LOGO)) {
+            const logo = await loadImage(CONFIG.ASSETS.LOGO);
+            ctx.drawImage(logo, width - 180, 30, 140, 140);
+        }
+    } catch (error) {
+        console.error('画像生成エラー:', error);
+    }
+
+    return canvas.toBuffer('image/png');
+}
+
+function getProgressBar(timeLeft, total) {
+    const filled = Math.max(0, Math.min(10, Math.round((timeLeft / total) * 10)));
+    return '█'.repeat(filled) + '░'.repeat(10 - filled);
+}
+
+function getColor(timeLeft) {
+    if (timeLeft <= 10) return 0xED4245;
+    if (timeLeft <= 20) return 0xFEE75C;
+    return 0x5865F2;
+}
+
+function buildNumberButtons(correctNumber) {
+    const numbers = new Set([correctNumber]);
+    while (numbers.size < CONFIG.NUMBER_COUNT) {
+        numbers.add(Math.floor(Math.random() * 90) + 10);
+    }
+
+    return new ActionRowBuilder().addComponents(
+        [...numbers]
+            .sort(() => Math.random() - 0.5)
+            .map((n) =>
+                new ButtonBuilder()
+                    .setCustomId(`numsel_${n}`)
+                    .setLabel(String(n))
+                    .setStyle(ButtonStyle.Secondary)
+            )
+    );
+}
+
+function buildStep1Embed(member, number, timeLeft) {
+    return new EmbedBuilder()
+        .setColor(getColor(timeLeft))
+        .setTitle('🌙 ネバーランドのとびらまえ')
+        .setDescription(
+            `${member}、きてくれてありがとう！\n\n` +
+            `とびらをあけるには、ちいさなおまじないをこなしてね 🗝️`
+        )
+        .addFields(
+            { name: '🔢 かぎのばんごう', value: `\`${number}\``, inline: true },
+            {
+                name: '⏳ のこりじかん',
+                value: `${getProgressBar(timeLeft, CONFIG.LIMIT_SECONDS)} ${timeLeft}びょう`,
+                inline: true,
+            }
+        )
+        .setFooter({ text: 'したのボタンからえらんでね！' });
+}
+
+function buildStep2Embed(phrase, timeLeft) {
+    return new EmbedBuilder()
+        .setColor(getColor(timeLeft))
+        .setTitle('✨ ふるいことばのちかい')
+        .setDescription(
+            'したのことばをそのままコピーして、このスレッドにおくってね 📜\n' +
+            'むずかしくないよ、コピペするだけ！'
+        )
+        .addFields(
+            { name: '🪄 おまじないのことば', value: `\`\`\`${phrase}\`\`\`` },
+            {
+                name: '⏳ のこりじかん',
+                value: `${getProgressBar(timeLeft, CONFIG.LIMIT_SECONDS)} ${timeLeft}びょう`,
+            }
+        )
+        .setFooter({ text: 'そのままコピペしてね！かえちゃダメだよ 🌟' });
+}
+
+async function startAuth(member) {
+    const phrase = buildPhrase();
+    const number = Math.floor(Math.random() * 90) + 10;
+
+    const authChannel = member.guild.channels.cache.get(CONFIG.AUTH_CHANNEL_ID);
+    if (!authChannel) return;
+
+    const thread = await authChannel.threads.create({
+        name: `🔑 にゅうこくしんさ-${member.user.username}`,
+        autoArchiveDuration: 60,
+        type: ChannelType.PrivateThread,
+        reason: 'にゅうこくしんさ',
     });
 
-    console.log('[RPC更新] 眠たい');
-  } catch (err) {
-    console.error('[RPC ERROR]', err);
-  }
+    await thread.members.add(member.id);
+
+    const buttonRow = buildNumberButtons(number);
+
+    const message = await thread.send({
+        content: `${member}`,
+        embeds: [buildStep1Embed(member, number, CONFIG.LIMIT_SECONDS)],
+        components: [buttonRow],
+    });
+
+    const session = {
+        phrase,
+        number,
+        step: 1,
+        timeLeft: CONFIG.LIMIT_SECONDS,
+        message,
+        thread,
+        buttonRow,
+        timer: null,
+    };
+
+    sessions.set(member.id, session);
+
+    session.timer = setInterval(async () => {
+        const s = sessions.get(member.id);
+        if (!s) return;
+
+        s.timeLeft -= 3;
+
+        if (s.timeLeft <= 0) {
+            await failAuth(member, s, 'timeout');
+            return;
+        }
+
+        try {
+            await s.message.edit({
+                embeds: [
+                    s.step === 1
+                        ? buildStep1Embed(member, s.number, s.timeLeft)
+                        : buildStep2Embed(s.phrase, s.timeLeft),
+                ],
+                components: s.step === 1 ? [s.buttonRow] : [],
+            });
+        } catch {}
+    }, 3000);
 }
 
-async function postMessage() {
-  if (process.env.ENABLE_POSTING !== 'true') {
-    console.log('[SKIP] メッセージ送信は現在無効です (ENABLE_POSTING != true)');
-    setTimeout(postMessage, randomInterval());
-    return;
-  }
+async function failAuth(member, session, reason = 'timeout') {
+    if (!session) return;
 
-  try {
-    const pool = buildWeightedPool();
-    const channelId = pool[Math.floor(Math.random() * pool.length)];
-    const channel = await client.channels.fetch(channelId);
-    await channel.sendTyping();
-    const typingTime = (Math.random() * 7000) + 5000;
-    const message = await generateWithRetry();
-    await new Promise(r => setTimeout(r, typingTime));
-    await channel.send(message);
-    console.log(`[書き込み完了] ch:${channelId} 「${message}」`);
-  } catch (err) {
-    console.error('[POST ERROR]', err);
-  } finally {
-    const wait = randomInterval();
-    console.log(`[次回の投稿まで] ${(wait / 60 / 1000).toFixed(1)}分待機します`);
-    setTimeout(postMessage, wait);
-  }
+    clearInterval(session.timer);
+    sessions.delete(member.id);
+
+    await logFail(member, reason);
+
+    try {
+        await member.send({
+            embeds: [
+                new EmbedBuilder()
+                    .setColor(0xED4245)
+                    .setTitle('💦 にゅうこくできなかったよ')
+                    .setDescription(
+                        reason === 'timeout'
+                            ? 'じかんぎれになっちゃった！\nもういちどサーバーにはいってちょうせんしてね 🌙'
+                            : 'おまじないがちがったみたい…\nもういちどちょうせんしてね 💫'
+                    ),
+            ],
+        });
+    } catch {}
+
+    try { await session.thread.setArchived(true); } catch {}
+    try { await member.kick('にゅうこくしっぱい'); } catch {}
 }
 
-setInterval(updatePresence, 30000);
+async function successAuth(member, session) {
+    clearInterval(session.timer);
+    sessions.delete(member.id);
 
-const PORT = process.env.PORT || 8080;
-http.createServer((req, res) => res.end('Active')).listen(PORT);
+    await member.roles.add(CONFIG.VERIFY_ROLE_ID).catch(() => {});
+    await logSuccess(member);
 
-client.once('ready', async () => {
-  console.log(`[READY] ${client.user.tag}`);
-  updatePresence();
-  setTimeout(postMessage, randomInterval());
+    try { await session.thread.setArchived(true); } catch {}
+
+    const image = await generateWelcomeImage(member);
+    const channel = member.guild.channels.cache.get(CONFIG.WELCOME_CHANNEL_ID)
+        || member.guild.channels.cache.get(CONFIG.AUTH_CHANNEL_ID);
+
+    if (!channel) return;
+
+    await channel.send({
+        embeds: [
+            new EmbedBuilder()
+                .setColor(0x57F287)
+                .setTitle('🎉 ネバーランドへようこそ！')
+                .setDescription(
+                    `${member} がなかまになったよ！\n` +
+                    `みんなでなかよくしてね 🌟`
+                )
+                .setImage('attachment://welcome.png'),
+        ],
+        files: [new AttachmentBuilder(image, { name: 'welcome.png' })],
+    });
+}
+
+client.on('guildMemberAdd', async (member) => {
+    if (member.user.bot) return;
+
+    if (whitelist.includes(member.id)) {
+        await member.roles.add(CONFIG.VERIFY_ROLE_ID).catch(() => {});
+        return;
+    }
+
+    await startAuth(member);
 });
 
-client.login(process.env.DISCORD_TOKEN).catch(console.error);
+client.on('guildMemberRemove', (member) => {
+    const session = sessions.get(member.id);
+    if (session) {
+        clearInterval(session.timer);
+        sessions.delete(member.id);
+    }
+});
+
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isButton() || !interaction.customId.startsWith('numsel_')) return;
+
+    const session = sessions.get(interaction.user.id);
+    if (!session || session.step !== 1) {
+        return interaction.reply({ content: 'セッションがみつからないよ。もういちどためしてね。', ephemeral: true });
+    }
+
+    const selected = Number(interaction.customId.split('_')[1]);
+
+    if (selected !== session.number) {
+        await interaction.reply({ content: 'ばんごうがちがうよ💦', ephemeral: true });
+        return failAuth(interaction.member, session, 'wrong');
+    }
+
+    session.step = 2;
+
+    await interaction.update({
+        embeds: [buildStep2Embed(session.phrase, session.timeLeft)],
+        components: [],
+    });
+});
+
+client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
+
+    if (message.content.startsWith('!reauth')) {
+        if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) return;
+
+        const target = message.mentions.members?.first();
+        if (!target) {
+            return message.reply('対象ユーザーをメンションしてね。例: `!reauth @ユーザー`');
+        }
+
+        const existing = sessions.get(target.id);
+        if (existing) {
+            clearInterval(existing.timer);
+            try { await existing.thread.setArchived(true); } catch {}
+            sessions.delete(target.id);
+        }
+
+        await startAuth(target);
+        await message.reply(`${target} の再認証をはじめたよ 🔑`);
+        return;
+    }
+
+    const session = sessions.get(message.author.id);
+    if (!session || session.step !== 2) return;
+    if (message.channel.id !== session.thread.id) return;
+
+    await message.delete().catch(() => {});
+
+    if (message.content.trim() === session.phrase) {
+        await successAuth(message.member, session);
+    } else {
+        await failAuth(message.member, session, 'wrong');
+    }
+});
+
+client.once('ready', () => {
+    console.log(`${client.user.tag} きどうしたよ！`);
+});
+
+client.login(process.env.DISCORD_TOKEN);

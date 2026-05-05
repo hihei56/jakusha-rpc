@@ -1,14 +1,12 @@
 {
-  "name": "jakusha-rpc",
+  "name": "neverland-auth-bot",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "discord.js-selfbot-v13": "latest",
-    "groq-sdk": "latest",
-    "dotenv": "latest",
-    "debug": "latest"
+    "discord.js": "^14.16.3",
+    "canvas": "^2.11.2"
   }
 }
