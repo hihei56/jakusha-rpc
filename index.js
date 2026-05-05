@@ -33,12 +33,8 @@ function randomFrom(arr) {
 }
 
 // 投稿間隔を完全にランダム化（連投・通常・長時間休憩の3パターン）
-function msUntilNoon() {
-  const now = new Date();
-  const next = new Date(now);
-  next.setHours(12, 0, 0, 0);
-  if (now >= next) next.setDate(next.getDate() + 1);
-  return next - now;
+function randomInterval() {
+  return (10 + Math.random() * 10) * 60 * 1000;
 }
 
 async function generateWithRetry(retries = 3) {
@@ -106,7 +102,7 @@ async function updatePresence() {
 async function postMessage() {
   if (process.env.ENABLE_POSTING !== 'true') {
     console.log('[SKIP] メッセージ送信は現在無効です (ENABLE_POSTING != true)');
-    setTimeout(postMessage, msUntilNoon());
+    setTimeout(postMessage, randomInterval());
     return;
   }
 
@@ -122,8 +118,8 @@ async function postMessage() {
   } catch (err) {
     console.error('[POST ERROR]', err);
   } finally {
-    const wait = msUntilNoon();
-    console.log(`[次回の投稿まで] ${(wait / 60 / 1000).toFixed(1)}分待機します（次の昼12時）`);
+    const wait = randomInterval();
+    console.log(`[次回の投稿まで] ${(wait / 60 / 1000).toFixed(1)}分待機します`);
     setTimeout(postMessage, wait);
   }
 }
@@ -136,9 +132,7 @@ http.createServer((req, res) => res.end('Active')).listen(PORT);
 client.once('ready', async () => {
   console.log(`[READY] ${client.user.tag}`);
   updatePresence();
-  const wait = msUntilNoon();
-  console.log(`[初回投稿] 昼12時まで ${(wait / 60 / 1000).toFixed(1)}分待機`);
-  setTimeout(postMessage, wait);
+  setTimeout(postMessage, randomInterval());
 });
 
 client.login(process.env.DISCORD_TOKEN).catch(console.error);
