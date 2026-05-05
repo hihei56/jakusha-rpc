@@ -4,7 +4,7 @@ const { Client } = require('discord.js-selfbot-v13');
 const Groq = require('groq-sdk');
 require('dotenv').config();
 
-const APP_ID = '1447891267336802400';
+const APP_ID = '1375082813384032286';
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const TEST_CHANNEL_ID = '1476939503510884638';
 
