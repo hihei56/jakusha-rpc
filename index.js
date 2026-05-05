@@ -33,18 +33,12 @@ function randomFrom(arr) {
 }
 
 // 投稿間隔を完全にランダム化（連投・通常・長時間休憩の3パターン）
-function randomInterval() {
-  const rand = Math.random();
-  if (rand < 0.15) {
-    // 15%の確率で「連投モード」（3〜10分）
-    return (3 + Math.random() * 7) * 60 * 1000;
-  } else if (rand < 0.85) {
-    // 70%の確率で「通常モード」（40〜150分）
-    return (40 + Math.random() * 110) * 60 * 1000;
-  } else {
-    // 15%の確率で「長時間休憩モード」（4〜8時間）
-    return (240 + Math.random() * 240) * 60 * 1000;
-  }
+function msUntilNoon() {
+  const now = new Date();
+  const next = new Date(now);
+  next.setHours(12, 0, 0, 0);
+  if (now >= next) next.setDate(next.getDate() + 1);
+  return next - now;
 }
 
 async function generateWithRetry(retries = 3) {
@@ -110,32 +104,27 @@ async function updatePresence() {
 }
 
 async function postMessage() {
-  // 環境変数 ENABLE_POSTING でオンオフ設定
   if (process.env.ENABLE_POSTING !== 'true') {
     console.log('[SKIP] メッセージ送信は現在無効です (ENABLE_POSTING != true)');
-    setTimeout(postMessage, 60 * 60 * 1000); // 1時間後に再チェック
+    setTimeout(postMessage, msUntilNoon());
     return;
   }
 
   try {
     const channelId = randomFrom(CHANNEL_IDS);
     const channel = await client.channels.fetch(channelId);
-    
-    // タイピング状態の演出
     await channel.sendTyping();
     const typingTime = (Math.random() * 7000) + 5000;
-    
     const message = await generateWithRetry();
     await new Promise(r => setTimeout(r, typingTime));
-    
     await channel.send(message);
     console.log(`[書き込み完了] ch:${channelId} 「${message}」`);
   } catch (err) {
     console.error('[POST ERROR]', err);
   } finally {
-    const nextWait = randomInterval();
-    console.log(`[次回の投稿まで] ${(nextWait / 60 / 1000).toFixed(1)}分待機します`);
-    setTimeout(postMessage, nextWait);
+    const wait = msUntilNoon();
+    console.log(`[次回の投稿まで] ${(wait / 60 / 1000).toFixed(1)}分待機します（次の昼12時）`);
+    setTimeout(postMessage, wait);
   }
 }
 
@@ -147,7 +136,9 @@ http.createServer((req, res) => res.end('Active')).listen(PORT);
 client.once('ready', async () => {
   console.log(`[READY] ${client.user.tag}`);
   updatePresence();
-  setTimeout(postMessage, 10000); // 起動10秒後に最初の投稿チェック
+  const wait = msUntilNoon();
+  console.log(`[初回投稿] 昼12時まで ${(wait / 60 / 1000).toFixed(1)}分待機`);
+  setTimeout(postMessage, wait);
 });
 
 client.login(process.env.DISCORD_TOKEN).catch(console.error);
