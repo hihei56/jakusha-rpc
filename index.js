@@ -39,6 +39,11 @@ function buildWeightedPool() {
 }
 const PROMPT = process.env.POST_PROMPT;
 
+// Disboardの/bump自動送信
+const DISBOARD_BOT_ID = '302050872383242240';
+const BUMP_CHANNEL_ID = process.env.BUMP_CHANNEL_ID;
+const BUMP_INTERVAL_MS = (2 * 60 + 5) * 60 * 1000; // Disboardのクールダウン2時間 + 5分バッファ
+
 function randomFrom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -136,6 +141,31 @@ async function postMessage() {
   }
 }
 
+async function bumpServer() {
+  if (process.env.ENABLE_BUMP !== 'true') {
+    console.log('[SKIP] bumpは現在無効です (ENABLE_BUMP != true)');
+    setTimeout(bumpServer, BUMP_INTERVAL_MS);
+    return;
+  }
+
+  if (!BUMP_CHANNEL_ID) {
+    console.error('[BUMP ERROR] BUMP_CHANNEL_ID が設定されていません');
+    setTimeout(bumpServer, BUMP_INTERVAL_MS);
+    return;
+  }
+
+  try {
+    const channel = await client.channels.fetch(BUMP_CHANNEL_ID);
+    await channel.sendSlash(DISBOARD_BOT_ID, 'bump');
+    console.log(`[BUMP] サーバー宣伝コマンドを送信しました (ch:${BUMP_CHANNEL_ID})`);
+  } catch (err) {
+    console.error('[BUMP ERROR]', err);
+  } finally {
+    console.log(`[次回のbumpまで] ${(BUMP_INTERVAL_MS / 60 / 1000).toFixed(0)}分待機します`);
+    setTimeout(bumpServer, BUMP_INTERVAL_MS);
+  }
+}
+
 setInterval(updatePresence, 30000);
 
 const PORT = process.env.PORT || 8080;
@@ -145,6 +175,7 @@ client.once('ready', async () => {
   console.log(`[READY] ${client.user.tag}`);
   updatePresence();
   setTimeout(postMessage, randomInterval());
+  setTimeout(bumpServer, 15000);
 });
 
 client.login(process.env.DISCORD_TOKEN).catch(console.error);
