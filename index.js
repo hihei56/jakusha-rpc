@@ -98,7 +98,7 @@ async function updatePresence() {
           },
           buttons: ['サーバーに参加'],
           metadata: {
-            button_urls: ['https://discord.gg/RcYbNZTQcn']
+            button_urls: ['https://discord.gg/M34RA8u2gZ']
           }
         }]
       }
