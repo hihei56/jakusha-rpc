@@ -6,7 +6,6 @@ require('dotenv').config();
 
 const APP_ID = '1375082813384032286';
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const TEST_CHANNEL_ID = '1476939503510884638';
 
 const client = new Client({
   checkUpdate: false,
@@ -21,31 +20,30 @@ const client = new Client({
   }
 });
 
-const IMAGES = [
-  '1501114018075770901'
-];
-
-const CHANNEL_IDS = process.env.CHANNEL_IDS.split(',').map(id => id.trim());
-const PRIORITY_CHANNEL_IDS = process.env.PRIORITY_CHANNEL_IDS
-  ? process.env.PRIORITY_CHANNEL_IDS.split(',').map(id => id.trim())
-  : [];
-
-function buildWeightedPool() {
-  const pool = [...CHANNEL_IDS];
-  PRIORITY_CHANNEL_IDS.forEach(id => {
-    pool.push(id, id);
-  });
-  return pool;
-}
+const IMAGES = ['1501114018075770901'];
 const PROMPT = process.env.POST_PROMPT;
+
+// 投稿先チャンネルを固定（.env に TARGET_CHANNEL_ID を設定）
+const TARGET_CHANNEL_ID = process.env.TARGET_CHANNEL_ID;
+if (!TARGET_CHANNEL_ID) {
+  console.warn('[WARN] TARGET_CHANNEL_ID が未設定です。CHANNEL_IDSの先頭を使います。');
+}
+
+// 深夜帯（0〜6時）はスキップ
+function isLateNight() {
+  const hour = new Date().getHours();
+  return hour >= 0 && hour < 6;
+}
 
 function randomFrom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-// 投稿間隔を完全にランダム化（連投・通常・長時間休憩の3パターン）
+// 投稿間隔：30分 ± 5分
 function randomInterval() {
-  return (10 + Math.random() * 10) * 60 * 1000;
+  const base = 30 * 60 * 1000;
+  const variance = (Math.random() * 10 - 5) * 60 * 1000;
+  return base + variance;
 }
 
 async function generateWithRetry(retries = 3) {
@@ -82,16 +80,14 @@ async function updatePresence() {
         afk: false,
         status: 'online',
         activities: [{
-          name: '眠たい',
+          name: 'タップでプロフィールが表示👈',
           type: 0,
           application_id: APP_ID,
           assets: {
             large_image: randomFrom(IMAGES),
             large_text: '眠たい'
           },
-          timestamps: {
-            start: 1
-          },
+          timestamps: { start: 1 },
           party: {
             id: 'nemutai',
             size: [384838486, 384838488]
@@ -103,41 +99,54 @@ async function updatePresence() {
         }]
       }
     });
-
-    console.log('[RPC更新] 眠たい');
+    console.log('[RPC更新] 完了');
   } catch (err) {
     console.error('[RPC ERROR]', err);
   }
 }
 
 async function postMessage() {
+  // 深夜帯はスキップ
+  if (isLateNight()) {
+    console.log('[SKIP] 深夜帯のため休止中 (0:00〜5:59)');
+    setTimeout(postMessage, 60 * 60 * 1000);
+    return;
+  }
+
   if (process.env.ENABLE_POSTING !== 'true') {
-    console.log('[SKIP] メッセージ送信は現在無効です (ENABLE_POSTING != true)');
+    console.log('[SKIP] メッセージ送信は無効');
     setTimeout(postMessage, randomInterval());
     return;
   }
 
   try {
-    const pool = buildWeightedPool();
-    const channelId = pool[Math.floor(Math.random() * pool.length)];
+    let channelId = TARGET_CHANNEL_ID;
+    if (!channelId) {
+      const fallbackIds = process.env.CHANNEL_IDS?.split(',').map(id => id.trim()) || [];
+      channelId = fallbackIds[0];
+      if (!channelId) throw new Error('有効なチャンネルIDがありません');
+    }
+
     const channel = await client.channels.fetch(channelId);
-    await channel.sendTyping();
-    const typingTime = (Math.random() * 7000) + 5000;
+    
+    // ★★★ タイピング表示を完全に削除 ★★★
+    // sendTyping() も待機時間も一切なし → AI生成が終わり次第即送信
     const message = await generateWithRetry();
-    await new Promise(r => setTimeout(r, typingTime));
     await channel.send(message);
     console.log(`[書き込み完了] ch:${channelId} 「${message}」`);
   } catch (err) {
     console.error('[POST ERROR]', err);
   } finally {
     const wait = randomInterval();
-    console.log(`[次回の投稿まで] ${(wait / 60 / 1000).toFixed(1)}分待機します`);
+    console.log(`[次回まで] ${(wait / 60000).toFixed(1)}分`);
     setTimeout(postMessage, wait);
   }
 }
 
+// RPC更新（30秒ごと）
 setInterval(updatePresence, 30000);
 
+// HTTPスリープ防止サーバー
 const PORT = process.env.PORT || 8080;
 http.createServer((req, res) => res.end('Active')).listen(PORT);
 
